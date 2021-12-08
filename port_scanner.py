@@ -1,5 +1,4 @@
 from scapy.all import *
-import sys
 import random
 import argparse
 import time
