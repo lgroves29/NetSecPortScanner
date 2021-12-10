@@ -5,6 +5,7 @@
 import socket
 from scapy.all import *
 import random
+import argparse
 import time
 from datetime import datetime
 
@@ -13,80 +14,166 @@ from datetime import datetime
 # https://docs.python.org/3/library/socket.html
 # https://stackoverflow.com/questions/15377150/how-can-i-call-the-send-function-without-getting-output
 # https://stackoverflow.com/questions/46062105/rounding-floats-with-f-string
+# https://nickmccullum.com/python-command-line-arguments
+# https://docs.python.org/3/library/argparse.html#module-argparse
+# common port numbers pulled from: https://en.wikipedia.org/wiki/Port_(computer_networking)#Common_port_numbers
 
-# target_ip = sys.argv[0]
-VERBOSE = True
-
-
-def normal_port_scan(target_ip, port):
-    addr = (target_ip, port)
-
-    # set up socket to send message
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(0.02)  # give 20ms to respond (pinging took <=10 ms)
-        refused = s.connect_ex(addr)  # 0 if port open
-        if not refused:
-            print(f'~~Port {port} is open.~~')
-            # receive response from open port
-            response = s.recv(200)  # TODO: can we know which length to accept?
-            print(f'Response: {response}')
-            return True  # port is open
-
-    return False
+common_ports = [20, 21, 22, 23, 25, 53, 67, 68, 80, 110, 119, 123, 143, 161, 194, 443]
 
 
-def port_scan(target_ip, order):
+def normal_port_scan(target_ip, ports, order="sequential"):
     open_ports = []
-
-    if order == "order":
-        # scan in order
-        for port in range(2**7):
-            # print(f'Scanning port {port}')
-            if normal_port_scan(target_ip, port):
-                open_ports.append(port)
+    if order == "random":
+        random.shuffle(ports)
+    elif order == "sequential":
+        pass
     else:
-        # scan in random order
-        ports = list(range(2**7))
-        random.shuffle(ports)  # random list of ports
-        print(ports[:100])
-        for port in ports:
-            # print(f'Scanning port {port}')
-            if normal_port_scan(target_ip, port):
+        raise Exception("Invalid port order selected")
+
+    for port in ports:
+        # print(f'Scanning port {port}')
+        # set up socket to send message
+        addr = (target_ip, port)
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.02)  # give 20ms to respond (pinging took <=10 ms)
+            refused = s.connect_ex(addr)  # 0 if port open
+            if not refused:  # port is open
+                print(f'>>>>Port {port} is open.')
+                # receive response from open port
+                response = s.recv(200)
+                print(f'>>>>Response: {response}')
                 open_ports.append(port)
 
     return open_ports
 
 
-def main():
-    target_ip = "131.229.72.13"
-    order = "order"
+def SYN_scan(ip_addr, ports, order="sequential"):
+    """
+    input: target ip address, a list of ports to scan, and port scanning order
+    output: list of open ports by number, total ports scanned
+    description: syn scan the given ip address at each port by sending a SYN
+    packet, waiting for an ACK response, then sending RST to end the handshake
+    """
+    open_ports = []
+    if order == "random":
+        random.shuffle(ports)
+    elif order == "sequential":
+        pass
+    else:
+        raise Exception("Invalid port order selected")
+    
+    for i in ports:
+        # print(i)
+        resp = sr1(IP(dst=ip_addr)/TCP(dport=i, flags='S'), timeout=.02, verbose=0)     
+        try: 
+            # print(resp.sprintf('%TCP.src% \t %TCP.sport% \t %TCP.flags%'))
+            if resp.getlayer(TCP).flags == 0x12:
+                print(f'>>>>Port {i} is open.')
+                open_ports.append(i)
+            sr1(IP(dst=ip_addr)/TCP(dport=i, flags='R'), timeout=.02, verbose=0) 
+        except: 
+            pass
 
-    start_time = time.time()
-    print(f'Starting port scan {target_ip} at {datetime.now()}')
+    return open_ports
 
-    # ping the target_ip to test if live
+
+def FIN_scan(ip_addr, ports, order="sequential"):
+    """
+    input: target ip address, list of ports to scan, and port scanning order
+    output: list of open ports by number, total ports scanned
+    description: FIN scan the given ip address at each port by sending a FIN
+    packet and watching for an RST packet in respose (indicates the port is 
+    closed). An open port does not respond to a TCP FIN message
+    """
+    
+    open_ports = []
+    if order == "random":
+        random.shuffle(ports)
+    elif order == "sequential":
+        pass
+    else:
+        raise Exception("Invalid port order selected")
+
+    # print("ports: ", ports)
+    for i in ports:
+        # print(i)
+        resp = sr1(IP(dst=ip_addr)/TCP(dport=i, flags='F'), timeout=.02, verbose=0)     
+        if resp:
+            # if the port responds, that means it is closed
+            pass
+        else: 
+            # an open port will not respond to a FIN packet
+            print(f'>>>>Port {i} is open.')
+            open_ports.append(i)
+
+    return open_ports
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Process user options')
+    parser.add_argument('-mode')
+    parser.add_argument('-order')
+    parser.add_argument('-ports')
+    parser.add_argument('-ip_address')  # 131.229.72.13 for class
+    args = parser.parse_args()
+    mode = args.mode
+    order = args.order
+    ports = args.ports
+    target_ip = args.ip_address
+    port_nums = []
+    open_ports = []
+
+    # validate user input
+    if (mode != "SYN" and mode != "FIN" and mode != "normal"):
+        print("Invalid mode selected!")
+        quit()
+    if (ports != "common" and ports != "all" and ports != "short"):
+        print("Invalid port option selected!")
+        quit()
+    if (order != "random" and order != "sequential"):
+        print("Invalid order selected!")  
+        quit()  
+    if ports == "common":
+        port_nums = common_ports
+    elif ports == "all":
+        port_nums = list(range(2**16))  # about 2200 seconds
+    elif ports == "short":
+        port_nums = list(range(2**7))  # a short run of all ports 0-127
+
+    print("-"*50)
+    print("starting port scan of address {} at {}".format(target_ip, datetime.now()))
+    print("scanning {} ports in {} order".format(ports, order))
+
+    # ping the target_ip to test if host is live
     x = IP(ttl=64)
-    x.dst = target_ip  # target host  # I'm at 47.82
-    live = sr1(x/ICMP(), verbose=False)  # None if no response
+    x.dst = target_ip  # target host
+    live = sr1(x / ICMP(), verbose=False)  # None if no response
 
     # if host is live, initiate port scanner
     if live:
-        if VERBOSE:
-            print(f'>>>Host ({target_ip}) is live.')
-        open_ports = port_scan(target_ip, order)
+        print(f'>>Host ({target_ip}) is live.')
+        start = time.time()
+        if mode == "normal":
+            open_ports = normal_port_scan(target_ip, port_nums, order)
+        elif mode == "SYN":
+            open_ports = SYN_scan(target_ip, port_nums, order)
+        elif mode == "FIN":
+            open_ports = FIN_scan(target_ip, port_nums, order)
+
+        # time the port scanning
+        stop = time.time()
+        execution_time = stop - start
 
         # output table
         print('-'*30)
         print(f'Interesting ports on {target_ip}:')
-        print(f'Not shown: {(2**16 if False else len([1, 2, 3])) - len(open_ports)} closed ports.')
+        print(f'Not shown: {len(port_nums) - len(open_ports)} closed ports.')
         print(f'PORT\tSTATE\tSERVICE')
         for port in open_ports:
             # report service for each open port
             print(f'{port}\topen\t{socket.getservbyport(port)}')
         print(f'{len(open_ports)} total port(s) open.')
-        print(f'scan done! 1 IP address ({target_ip}) scanned in {time.time() - start_time:.2f} seconds.')
+        print(f'scan done! 1 IP address ({target_ip}) scanned in {execution_time:.2f} seconds.')
     else:
-        print(f'>>>Host ({target_ip}) is not live.')
+        print(f'>>Host ({target_ip}) is not live.')
 
-
-main()
