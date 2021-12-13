@@ -16,7 +16,7 @@ from datetime import datetime
 # https://stackoverflow.com/questions/46062105/rounding-floats-with-f-string
 # https://nickmccullum.com/python-command-line-arguments
 # https://docs.python.org/3/library/argparse.html#module-argparse
-# common port numbers pulled from: https://en.wikipedia.org/wiki/Port_(computer_networking)#Common_port_numbers
+# common port numbers pulled from: https://en.wikipedia.org/wiki/Port_(computer_networking)
 
 common_ports = [20, 21, 22, 23, 25, 53, 67, 68, 80, 110, 119, 123, 143, 161, 194, 443]
 
@@ -63,13 +63,13 @@ def SYN_scan(ip_addr, ports, order="sequential"):
         raise Exception("Invalid port order selected")
     
     for i in ports:
-        # print(i)
         resp = sr1(IP(dst=ip_addr)/TCP(dport=i, flags='S'), timeout=.02, verbose=0)     
         try: 
-            # print(resp.sprintf('%TCP.src% \t %TCP.sport% \t %TCP.flags%'))
+            # TCP SYN/ACK flag = 0x12
             if resp.getlayer(TCP).flags == 0x12:
                 print(f'>>>>Port {i} is open.')
                 open_ports.append(i)
+            # send RST packet to reset connection
             sr1(IP(dst=ip_addr)/TCP(dport=i, flags='R'), timeout=.02, verbose=0) 
         except: 
             pass
@@ -93,13 +93,10 @@ def FIN_scan(ip_addr, ports, order="sequential"):
         pass
     else:
         raise Exception("Invalid port order selected")
-
-    # print("ports: ", ports)
     for i in ports:
-        # print(i)
         resp = sr1(IP(dst=ip_addr)/TCP(dport=i, flags='F'), timeout=.02, verbose=0)     
         if resp:
-            # if the port responds, that means it is closed
+            # if the port responds, that indicates it is closed
             pass
         else: 
             # an open port will not respond to a FIN packet
