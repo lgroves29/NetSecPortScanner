@@ -22,7 +22,15 @@ common_ports = [20, 21, 22, 23, 25, 53, 67, 68, 80, 110, 119, 123, 143, 161, 194
 
 
 def normal_port_scan(target_ip, ports, order="sequential"):
+    """
+    input: target ip address, list of ports to scan, and port scanning order
+    output: list of open ports by number
+    description: normal port scan the given ip address at each port by sending
+    a connection request.
+    """
     open_ports = []
+
+    # port order
     if order == "random":
         random.shuffle(ports)
     elif order == "sequential":
@@ -30,6 +38,7 @@ def normal_port_scan(target_ip, ports, order="sequential"):
     else:
         raise Exception("Invalid port order selected")
 
+    # scan each port
     for port in ports:
         # print(f'Scanning port {port}')
         # set up socket to send message
@@ -50,18 +59,21 @@ def normal_port_scan(target_ip, ports, order="sequential"):
 def SYN_scan(ip_addr, ports, order="sequential"):
     """
     input: target ip address, a list of ports to scan, and port scanning order
-    output: list of open ports by number, total ports scanned
+    output: list of open ports by number
     description: syn scan the given ip address at each port by sending a SYN
     packet, waiting for an ACK response, then sending RST to end the handshake
     """
     open_ports = []
+
+    # port order
     if order == "random":
         random.shuffle(ports)
     elif order == "sequential":
         pass
     else:
         raise Exception("Invalid port order selected")
-    
+
+    # scan each port
     for i in ports:
         resp = sr1(IP(dst=ip_addr)/TCP(dport=i, flags='S'), timeout=.02, verbose=0)     
         try: 
@@ -80,19 +92,22 @@ def SYN_scan(ip_addr, ports, order="sequential"):
 def FIN_scan(ip_addr, ports, order="sequential"):
     """
     input: target ip address, list of ports to scan, and port scanning order
-    output: list of open ports by number, total ports scanned
+    output: list of open ports by number
     description: FIN scan the given ip address at each port by sending a FIN
-    packet and watching for an RST packet in respose (indicates the port is 
+    packet and watching for an RST packet in response (indicates the port is
     closed). An open port does not respond to a TCP FIN message
     """
-    
     open_ports = []
+
+    # port order
     if order == "random":
         random.shuffle(ports)
     elif order == "sequential":
         pass
     else:
         raise Exception("Invalid port order selected")
+
+    # scan each port
     for i in ports:
         resp = sr1(IP(dst=ip_addr)/TCP(dport=i, flags='F'), timeout=.02, verbose=0)     
         if resp:
@@ -150,6 +165,7 @@ if __name__ == "__main__":
     if live:
         print(f'>>Host ({target_ip}) is live.')
         start = time.time()
+        # call given port scanning mode
         if mode == "normal":
             open_ports = normal_port_scan(target_ip, port_nums, order)
         elif mode == "SYN":
